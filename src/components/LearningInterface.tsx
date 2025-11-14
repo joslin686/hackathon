@@ -457,7 +457,7 @@ function LearningInterface() {
       <div className="bg-white border-b border-gray-200 px-8 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-6">
-            <h1 className="text-2xl font-bold text-gray-900">{pdfFileName}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Socratic Learning</h1>
             <div
               className={`px-4 py-1 rounded-full text-white font-semibold text-sm transition-all duration-500 ${
                 difficultyChanged ? 'scale-110 shadow-lg animate-pulse' : ''
