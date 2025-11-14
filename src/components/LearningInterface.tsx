@@ -6,6 +6,7 @@ import {
   evaluateResponse,
   generateExplanation,
   generateHint,
+  generateIntroExplanation,
   ConversationMessage,
 } from '../services/gemini'
 
@@ -84,11 +85,12 @@ function LearningInterface() {
   const [difficultyChanged, setDifficultyChanged] = useState(false)
   const [exploredTopics, setExploredTopics] = useState<Set<string>>(new Set())
   const [lastErrorAction, setLastErrorAction] = useState<(() => Promise<void>) | null>(null)
+  const [hasShownIntro, setHasShownIntro] = useState(false)
 
-  // Generate first question on mount
+  // Generate intro explanation first, then first question on mount
   useEffect(() => {
-    if (pdfContent) {
-      generateNextQuestion()
+    if (pdfContent && !hasShownIntro) {
+      showIntroExplanation()
     }
   }, [])
 
@@ -106,6 +108,64 @@ function LearningInterface() {
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
     }
   }, [userAnswer])
+
+  const showIntroExplanation = async () => {
+    if (!pdfContent) return
+
+    setIsLoading(true)
+    setError(null)
+
+    const retryAction = async () => {
+      await showIntroExplanation()
+    }
+    setLastErrorAction(() => retryAction)
+
+    try {
+      const firstTopic = topics.length > 0 ? topics[0] : undefined
+      const introExplanation = await generateIntroExplanation(
+        pdfContent,
+        currentDifficulty,
+        firstTopic
+      )
+
+      // Add intro explanation to messages
+      const introMessage: Message = {
+        id: `intro-${Date.now()}`,
+        type: 'ai-explanation',
+        content: introExplanation,
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, introMessage])
+
+      // Add to conversation history
+      setConversationHistory((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: introExplanation,
+          type: 'explanation',
+        },
+      ])
+
+      setHasShownIntro(true)
+      setLastErrorAction(null)
+
+      // After showing intro, generate the first question
+      setTimeout(() => {
+        generateNextQuestion()
+      }, 500) // Small delay to let the intro message render
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate introduction'
+      if (errorMessage.includes('rate limit') || errorMessage.includes('quota')) {
+        setError('API rate limit reached. Please wait a moment and try again.')
+      } else {
+        setError(errorMessage)
+      }
+      console.error('Error generating intro:', err)
+      toast.error('Failed to generate introduction. Click retry to try again.')
+      setIsLoading(false)
+    }
+  }
 
   const generateNextQuestion = async () => {
     if (!pdfContent) return

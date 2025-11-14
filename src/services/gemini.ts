@@ -180,6 +180,125 @@ ${pdfText.substring(0, 100000)}` // Limit to first 100k chars to avoid token lim
 }
 
 /**
+ * Generates an introductory explanation of the topic to start the learning session
+ * @param pdfContent - The extracted text content from the PDF
+ * @param difficultyLevel - Difficulty level from 1 to 4
+ * @param currentTopic - Optional current topic to focus on
+ * @returns Promise resolving to an introductory explanation string
+ * @throws Error if generation fails or API call fails
+ */
+export async function generateIntroExplanation(
+  pdfContent: string,
+  difficultyLevel: number,
+  currentTopic?: string
+): Promise<string> {
+  try {
+    // Validate inputs
+    if (!pdfContent || pdfContent.trim().length === 0) {
+      throw new Error('PDF content is empty')
+    }
+
+    if (difficultyLevel < 1 || difficultyLevel > 4 || !Number.isInteger(difficultyLevel)) {
+      throw new Error('Difficulty level must be an integer between 1 and 4')
+    }
+
+    // Initialize Gemini client
+    const genAI = getGeminiClient()
+    const model = genAI.getGenerativeModel({ model: getModelName() })
+
+    // Get first 6000 characters for a comprehensive intro
+    const pdfContext = pdfContent.substring(0, 6000)
+
+    // Define difficulty-based explanation styles
+    const difficultyStyles = {
+      1: {
+        style: 'simple and straightforward',
+        instruction: 'Use simple language, basic terms, and straightforward explanations. Keep it accessible and easy to understand.',
+        length: '4-5 sentences',
+      },
+      2: {
+        style: 'clear with some detail',
+        instruction: 'Provide clear explanations with moderate detail. Include relationships and basic reasoning.',
+        length: '5-6 sentences',
+      },
+      3: {
+        style: 'detailed with connections',
+        instruction: 'Provide detailed explanations that show connections between concepts. Include applications and relationships.',
+        length: '6-7 sentences',
+      },
+      4: {
+        style: 'comprehensive and nuanced',
+        instruction: 'Provide comprehensive explanations with nuanced understanding. Include synthesis, critical analysis, and deeper insights.',
+        length: '7-8 sentences',
+      },
+    }
+
+    const styleInfo = difficultyStyles[difficultyLevel as keyof typeof difficultyStyles]
+
+    // Build the intro explanation prompt
+    const introPrompt = `You are a Socratic tutor starting a new learning session. Your job is to provide an engaging introductory explanation of the topic to help the student get oriented before we begin Socratic questioning.
+
+CRITICAL REQUIREMENTS:
+1. Provide a clear, engaging introduction to the main topic(s) covered in the material
+2. Give an overview of key concepts that will be explored
+3. Explain the topic as general knowledge without referencing "the lecture", "the PDF", "the material", or "the slides"
+4. Match the difficulty level ${difficultyLevel} style: ${styleInfo.instruction}
+5. Keep the explanation ${styleInfo.length} long (comprehensive but not overwhelming)
+6. Use ${styleInfo.style} language appropriate for difficulty level ${difficultyLevel}
+7. Present information as universal concepts, not as something from a specific source
+8. Make it engaging and set the stage for deeper exploration through questions
+9. End with a transition like "Let's explore this further through some questions" or "Now let's dive deeper with some questions"
+${currentTopic ? `10. Focus primarily on the topic: "${currentTopic}"` : ''}
+
+Difficulty Level ${difficultyLevel} Style: ${styleInfo.style}
+
+Lecture Material (first 6000 characters):
+${pdfContext}
+
+Generate an engaging introductory explanation that:
+- Introduces the main topic(s) and key concepts
+- Provides context and sets the stage for learning
+- Matches difficulty level ${difficultyLevel} complexity
+- Is ${styleInfo.length} long
+- Ends with a transition to questions
+- Does NOT reference any external material or ask students to check anything
+
+Return ONLY the explanation text, nothing else.`
+
+    const result = await model.generateContent(introPrompt)
+    const response = await result.response
+    let explanation = response.text().trim()
+
+    if (!explanation || explanation.length === 0) {
+      throw new Error('Generated intro explanation is empty')
+    }
+
+    // Clean up the explanation
+    explanation = explanation
+      .replace(/^(Introduction|Intro|Explanation|Response):\s*/i, '') // Remove prefixes
+      .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+      .trim()
+
+    // Ensure it ends with a transition if not already present
+    const transitionPhrases = ['question', 'explore', 'dive', 'let\'s']
+    const hasTransition = transitionPhrases.some((phrase) =>
+      explanation.toLowerCase().includes(phrase)
+    )
+    
+    if (!hasTransition || !explanation.toLowerCase().includes('question')) {
+      explanation += ' Let\'s explore this further through some questions.'
+    }
+
+    return explanation
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to generate intro explanation: ${error.message}`)
+    }
+    throw new Error('Failed to generate intro explanation: Unknown error occurred')
+  }
+}
+
+/**
  * Generates a Socratic question based on PDF content, difficulty level, and conversation history
  * @param pdfContent - The extracted text content from the PDF
  * @param difficultyLevel - Difficulty level from 1 to 4
